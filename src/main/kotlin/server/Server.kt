@@ -67,7 +67,7 @@ fun executeCommand(request: List<String>): String {
     }
 }
 
-private const val CRLF = "/r/n"
+private const val CRLF = "\\r\\n"
 
 typealias Command = (arguments: List<String>) -> String
 
@@ -135,6 +135,12 @@ fun delete(): Command = {
 
 // Utility functions.
 
+/**
+ * This function constructs the Server's response based on the RespType by
+ * retrieving the value from the Cache.
+ *
+ * @param x The RespType.
+ */
 fun constructResponse(x: RespType): String {
     return cache[x]?.let {
         when(it) {
@@ -155,6 +161,12 @@ fun constructResponse(x: RespType): String {
     }
 }
 
+/**
+ * This function is responsible for constructing the RespType.
+ *
+ * @param x1 The Type of the request.
+ * @param x  The value that the RespType holds.
+ */
 fun parseRespType(x1: Type, x: String): RespType {
     val x2 = x.removeSuffix(CRLF)
     return when (x1) {
@@ -183,6 +195,13 @@ fun parseRespType(x1: Type, x: String): RespType {
     }
 }
 
+/**
+ * This function is responsible for constructing the basic RespType.
+ * A basic RespType is one that doesn't contain other RespTypes.
+ *
+ * @param x1 The Type of the request.
+ * @param x  The value that the RespType holds.
+ */
 fun getBasicType(x1: Type, x: String): RespType {
     return when (x1) {
         Type.STRING     -> RespType.String(x)
