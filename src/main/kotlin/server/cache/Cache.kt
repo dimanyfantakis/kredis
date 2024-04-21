@@ -9,20 +9,23 @@ interface Cache {
 }
 
 object LRUCache : Cache {
+    // TODO: Make concurrent.
     private val cache: HashMap<RespType, Node> = hashMapOf()
     private val least: Node = Node(null, null)
     private val most: Node  = Node(null, null)
 
+    var size: Int = cache.size
+
     init {
-        least.next = most
-        most.prev  = least
+        least.prev = most
+        most.next  = least
     }
 
 
     @Override
     override fun set(key: RespType, value: RespType) {
+        // Remove from cache.
         cache[key]?.let {
-            // Remove from cache.
             remove(it)
         }
         val node = Node(key, value)
@@ -30,6 +33,8 @@ object LRUCache : Cache {
         cache[key] = node
         // Insert to cache.
         add(node)
+        // Update size.
+        size = cache.size
     }
 
     @Override
@@ -39,10 +44,7 @@ object LRUCache : Cache {
             remove(it)
             // Insert to cache.
             add(it)
-            // Return val.
             it.value
-        } ?: run {
-            null
         }
     }
 
@@ -57,16 +59,15 @@ object LRUCache : Cache {
 
     private fun add(node: Node) {
         val mostCopy: Node? = most.next
-        // Update most.
+        // Update the head.
         most.next = node
         node.prev = most
-        // New points to prev most.
+
         mostCopy?.prev = node
         node.next = mostCopy
     }
 
     private fun remove(node: Node) {
-        // remove node.
         val prevCopy: Node? = node.prev
         val nextCopy: Node? = node.next
 
@@ -75,9 +76,16 @@ object LRUCache : Cache {
     }
 
     private fun clear() {
-        // Reset most and prev.
         least.next = most
         most.prev  = least
         cache.clear()
+    }
+
+    fun getHead(): Pair<RespType?, RespType?> {
+        return Pair(most.next?.key, most.next?.value)
+    }
+
+    fun getTail(): Pair<RespType?, RespType?> {
+        return Pair(least.prev?.key, least.prev?.value)
     }
 }

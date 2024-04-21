@@ -1,19 +1,24 @@
 import io.kotest.core.spec.style.BehaviorSpec
-import io.kotest.matchers.equals.shouldBeEqual
+import io.kotest.core.test.TestCase
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.types.shouldBeInstanceOf
-import io.kotest.matchers.types.shouldBeSameInstanceAs
+import java.math.BigInteger
+import server.cache
 import server.cache.LRUCache
 import server.cache.RespType
 import server.cache.Type
 import server.constructResponse
 import server.executeCommand
 import server.getBasicType
-import java.math.BigInteger
+
+private const val OK = "+OK\\r\\n"
 
 class ServerTest : BehaviorSpec ({
+
+
+
      Given("A get request") {
-         val cache = LRUCache
+//         val cache = LRUCache
          val key = RespType.String(string = "foo")
          cache[key] = RespType.String(string = "bar")
          When("We execute the command") {
@@ -35,7 +40,7 @@ class ServerTest : BehaviorSpec ({
      }
 
      Given("A RespType object") {
-        val cache = LRUCache
+//        val cache = LRUCache
         When("We get the value from the database") {
             And("We construct the response of the server") {
                 Then("The response should follow the Redis protocol") {
@@ -84,6 +89,29 @@ class ServerTest : BehaviorSpec ({
                  Then("We should return a String RespType with the given key") {
                      b.shouldBeInstanceOf<RespType.BigInteger>()
                      b.bigInteger shouldBe BigInteger.valueOf(123456789)
+                 }
+             }
+         }
+     }
+
+     Given("A set request") {
+         When("We execute the command") {
+             And("The key doesn't exist in the database") {
+                 val request = "SET +foo +bar\\r\\n"
+                 val response = executeCommand(request.split(" "))
+                 Then("We should get back an OK value") {
+                     response shouldBe OK
+                 }
+
+                 Then("foo") {
+                     cache.size shouldBe 1
+                 }
+             }
+             And("The key exists in the database") {
+                 val request = "SET +foo baz\\r\\n"
+                 val response = executeCommand(request.split(" "))
+                 Then("We should get back an OK value") {
+                     response shouldBe OK
                  }
              }
          }

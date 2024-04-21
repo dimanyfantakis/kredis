@@ -1,11 +1,16 @@
 package client
 
-import io.ktor.network.selector.*
-import io.ktor.network.sockets.*
-import io.ktor.network.tls.*
-import io.ktor.utils.io.*
-import kotlinx.coroutines.*
-import kotlin.system.*
+import io.ktor.network.selector.SelectorManager
+import io.ktor.network.sockets.aSocket
+import io.ktor.network.sockets.openReadChannel
+import io.ktor.network.sockets.openWriteChannel
+import io.ktor.network.tls.tls
+import io.ktor.utils.io.readUTF8Line
+import io.ktor.utils.io.writeStringUtf8
+import kotlin.system.exitProcess
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 
 fun main() {
     runBlocking {

@@ -1,17 +1,22 @@
 package server
 
-import io.ktor.network.selector.*
-import io.ktor.network.sockets.*
-import io.ktor.utils.io.*
-import kotlinx.coroutines.*
+import io.ktor.network.selector.SelectorManager
+import io.ktor.network.sockets.aSocket
+import io.ktor.network.sockets.openReadChannel
+import io.ktor.network.sockets.openWriteChannel
+import io.ktor.utils.io.readUTF8Line
+import io.ktor.utils.io.writeStringUtf8
+import java.math.BigInteger
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import server.cache.Cache
 import server.cache.LRUCache
 import server.cache.RespType
 import server.cache.Type
-import java.math.BigInteger
 
 
-val cache: Cache = LRUCache
+val cache: LRUCache = LRUCache
 
 
 fun main() {
@@ -28,17 +33,16 @@ fun main() {
             launch {
                 val receiveChannel = socket.openReadChannel()
                 val sendChannel = socket.openWriteChannel(autoFlush = true)
-                sendChannel.writeStringUtf8("Please enter your name\n")
+                sendChannel.writeStringUtf8("Enter your request\n")
                 try {
                     while (true) {
                         val request = receiveChannel.readUTF8Line()?.split(" ")
                         request?.let {
-                            executeCommand(request.rest(1)).let { response ->
+                            executeCommand(it).let { response ->
                                 sendChannel.writeStringUtf8(response)
                             }
                         } ?: run {
-                            // Input is null.
-                            // Throw Exception?
+                            throw IllegalArgumentException("Request is null")
                         }
                     }
                 } catch (e: Throwable) {
@@ -68,69 +72,49 @@ fun executeCommand(request: List<String>): String {
 }
 
 private const val CRLF = "\\r\\n"
+private val OK = Type.STRING.symbol + "OK" + CRLF
 
 typealias Command = (arguments: List<String>) -> String
 
 fun get(): Command = { arguments ->
-    arguments.firstOrNull()?.let {key ->
+    arguments.firstOrNull()?.let { key ->
         // Parse the key.
-        val x = key.substring(1)
-        val respType = when (key.firstOrNull()) {
-            '+' -> parseRespType(Type.STRING, x)
-            ':' -> parseRespType(Type.INT, x)
-            '#' -> parseRespType(Type.BOOLEAN, x)
-            '(' -> parseRespType(Type.BIGINTEGER, x)
-            ',' -> parseRespType(Type.DOUBLE, x)
-            '$' -> parseRespType(Type.BYTEARRAY, x)
-            '*' -> parseRespType(Type.ARRAY, x)
-            '%' -> parseRespType(Type.MAP, x)
-            '~' -> parseRespType(Type.SET, x)
-            '_' -> parseRespType(Type.NULL, x)
-            else -> parseRespType(Type.ERROR, x)
-        }
+        val respType = parseType(key)
         // Construct the response.
         constructResponse(respType) + CRLF
-    } ?:
-        // Throw exception?
-        ""
+    } ?: throw IllegalArgumentException("No key passed")
 }
 
 fun set(): Command = { arguments ->
-    val key = arguments.firstOrNull()
-    val rest = arguments.rest(1)
-    key?.let {
-        rest.firstOrNull()?.let {
-            // Parse the key.
-            // Parse the value.
-            // Set the <key,value> pair.
-//            cache[key] = value
-        } ?: run {
-            // No value.
-            // Throw exception.
-        }
-        ""
-        // Construct response.
-    } ?:
-        // No key.
-        // Throw exception.
-        ""
+    arguments.firstOrNull()?.let {
+        val key = parseType(it)
+
+        arguments.getOrNull(1)?.let {
+            val value = parseType(it)
+            cache[key] = value
+        } ?: throw IllegalArgumentException("No value passed")
+
+    } ?: throw IllegalArgumentException("No key passed")
+
+    // Everything went well, return an OK value.
+    OK
 }
 
 fun mset(): Command = {
-    TODO()
+    TODO("Not yet implemented")
 }
 
 
 fun mget(): Command = {
-    TODO()
+    TODO("Not yet implemented")
 }
 
 fun flush(): Command = {
-    TODO()
+    TODO("Not yet implemented")
 }
 
 fun delete(): Command = {
-    TODO()
+    TODO("Not yet implemented")
 }
 
 // Utility functions.
@@ -139,10 +123,10 @@ fun delete(): Command = {
  * This function constructs the Server's response based on the RespType by
  * retrieving the value from the Cache.
  *
- * @param x The RespType.
+ * @param respType The RespType.
  */
-fun constructResponse(x: RespType): String {
-    return cache[x]?.let {
+fun constructResponse(respType: RespType): String {
+    return cache[respType]?.let {
         when(it) {
             is RespType.String -> Type.STRING.symbol + it.string
             is RespType.Int -> Type.INT.symbol + "${it.int}"
@@ -161,30 +145,48 @@ fun constructResponse(x: RespType): String {
     }
 }
 
+fun parseType(key: String) : RespType {
+    val x = key.substring(1)
+
+    return when (key.firstOrNull()) {
+        '+' -> parseRespType(Type.STRING, x)
+        ':' -> parseRespType(Type.INT, x)
+        '#' -> parseRespType(Type.BOOLEAN, x)
+        '(' -> parseRespType(Type.BIGINTEGER, x)
+        ',' -> parseRespType(Type.DOUBLE, x)
+        '$' -> parseRespType(Type.BYTEARRAY, x)
+        '*' -> parseRespType(Type.ARRAY, x)
+        '%' -> parseRespType(Type.MAP, x)
+        '~' -> parseRespType(Type.SET, x)
+        '_' -> parseRespType(Type.NULL, x)
+        else -> parseRespType(Type.ERROR, x)
+    }
+}
+
 /**
  * This function is responsible for constructing the RespType.
  *
- * @param x1 The Type of the request.
- * @param x  The value that the RespType holds.
+ * @param type The Type of the request.
+ * @param value  The value that the RespType holds.
  */
-fun parseRespType(x1: Type, x: String): RespType {
-    val x2 = x.removeSuffix(CRLF)
-    return when (x1) {
+fun parseRespType(type: Type, value: String): RespType {
+    val parsedValue = value.removeSuffix(CRLF)
+    return when (type) {
         Type.STRING,
         Type.INT,
         Type.BOOLEAN,
         Type.BIGINTEGER,
-        Type.DOUBLE -> getBasicType(x1, x2)
-         // $<length>\r\n<data>\r\n , length = bytes
+        Type.DOUBLE    -> getBasicType(type, parsedValue)
         Type.BYTEARRAY -> {
-            val split = x2.split(CRLF)
+            // $<length>\r\n<data>\r\n , length = bytes
+            val split = parsedValue.split(CRLF)
             if (split[0].toInt() == split[1].length) RespType.ByteArray(split[1].toByteArray()) else RespType.ByteArray("".toByteArray())
         }
-        Type.NULL -> RespType.Null(x2)
-        Type.ERROR -> RespType.Error(x2)
+        Type.NULL  -> RespType.Null(parsedValue)
+        Type.ERROR -> RespType.Error(parsedValue)
         // Can contain mix types.
         Type.ARRAY -> {
-            val split = x2.split(CRLF)
+            val split = parsedValue.split(CRLF)
 //            if (split[0].toInt() == split[1].length) RespType.Array(Array(split[0].toInt()) { i -> getBasicType(parseType()) }) else RespType.Array(arrayOf())
             TODO()
         }
@@ -199,15 +201,15 @@ fun parseRespType(x1: Type, x: String): RespType {
  * This function is responsible for constructing the basic RespType.
  * A basic RespType is one that doesn't contain other RespTypes.
  *
- * @param x1 The Type of the request.
- * @param x  The value that the RespType holds.
+ * @param type The Type of the request.
+ * @param value  The value that the RespType holds.
  */
-fun getBasicType(x1: Type, x: String): RespType {
-    return when (x1) {
-        Type.STRING     -> RespType.String(x)
-        Type.INT        -> x.toIntOrNull()?.let { RespType.Int(it) } ?: RespType.Int(0)
-        Type.BOOLEAN    -> RespType.Boolean(x.toBoolean())
-        Type.BIGINTEGER -> x.toBigIntegerOrNull()?.let { RespType.BigInteger(it) } ?: RespType.BigInteger(BigInteger.valueOf(0))
+fun getBasicType(type: Type, value: String): RespType {
+    return when (type) {
+        Type.STRING     -> RespType.String(value)
+        Type.INT        -> value.toIntOrNull()?.let { RespType.Int(it) } ?: RespType.Int(0)
+        Type.BOOLEAN    -> RespType.Boolean(value.toBoolean())
+        Type.BIGINTEGER -> value.toBigIntegerOrNull()?.let { RespType.BigInteger(it) } ?: RespType.BigInteger(BigInteger.valueOf(0))
         // ,[<+|->]<integral>[.<fractional>][<E|e>[sign]<exponent>]\r\n
         // ,[inf | -inf | nan]
         Type.DOUBLE     -> TODO()

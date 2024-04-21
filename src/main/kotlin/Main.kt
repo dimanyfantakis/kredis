@@ -1,13 +1,6 @@
 import server.main
 
+/** For testing purposes only. */
 fun main() {
-    // Not needed?
-//    createCache()
     main()
-}
-
-
-fun createCache() {
-    println("\\r\\n")
-    TODO("Not yet implemented")
 }
